@@ -24,6 +24,7 @@ const OPERATION_BATCH_SIZE = 10
  * { [issueId: string]: string }
  */
 const gitHubIssuesIdToNotionPageId = {}
+const notionIssuesToCreateInGithub = {}
 
 /**
  * Initialize local data store.
@@ -35,9 +36,12 @@ setInitialGitHubToNotionIdMap().then(syncNotionDatabaseWithGitHub)
  * Get and set the initial data store with issues currently in the database.
  */
 async function setInitialGitHubToNotionIdMap() {
-  const currentIssues = await getIssuesFromNotionDatabase()
+  const {currentIssues, newIssues} = await getIssuesFromNotionDatabase()
   for (const { pageId, issueNumber } of currentIssues) {
     gitHubIssuesIdToNotionPageId[issueNumber] = pageId
+  }
+  for (const { pageId, issueNumber } of newIssues) {
+    notionIssuesToCreateInGithub.push(pageId)
   }
 }
 
@@ -50,6 +54,8 @@ async function syncNotionDatabaseWithGitHub() {
   // Group issues into those that need to be created or updated in the Notion database.
   const { pagesToCreate, pagesToUpdate } = getNotionOperations(issues)
 
+  // const issuesToCreate = getGithubOperations()
+
   // Create pages for new issues.
   console.log(`\n${pagesToCreate.length} new issues to add to Notion.`)
   await createPages(pagesToCreate)
@@ -57,6 +63,8 @@ async function syncNotionDatabaseWithGitHub() {
   // Updates pages for existing issues.
   console.log(`\n${pagesToUpdate.length} issues to update in Notion.`)
   await updatePages(pagesToUpdate)
+
+  // Create issues from new Notion pages
 
   // Success!
   console.log("\n✅ Notion database is synced with GitHub.")
@@ -69,25 +77,44 @@ async function syncNotionDatabaseWithGitHub() {
  */
 async function getIssuesFromNotionDatabase() {
   const pages = []
+  const newIssues = []
   let cursor = undefined
   while (true) {
     const { results, next_cursor } = await notion.databases.query({
       database_id: databaseId,
       start_cursor: cursor,
     })
-    pages.push(...results)
+    pages.push(...results) 
     if (!next_cursor) {
       break
     }
     cursor = next_cursor
   }
   console.log(`${pages.length} issues successfully fetched.`)
+
+  for (var i = 0; i < pages.length; i++) {
+    if (pages[i].properties["Issue Number"]) {
+      console.log(`->entry already exists.`)
+      pages[i].pageId = pages[i].id
+      pages[i].issueNumber = pages[i].properties["Issue Number"].number
+    } else {
+      console.log(`->entry doesn't yet exist.`)
+      newIssues[i].pageId = pages[i].id
+      newIssues[i].issueNumber = -1
+    } 
+  }
+  
+  /*try {
   return pages.map(page => {
     return {
       pageId: page.id,
       issueNumber: page.properties["Issue Number"].number,
     }
-  })
+  }) } catch {
+    console.log(`caught something.`)
+  }*/
+
+  return {pages, newIssues}
 }
 
 /**
@@ -190,6 +217,11 @@ async function updatePages(pagesToUpdate) {
     )
     console.log(`Completed batch size: ${pagesToUpdateBatch.length}`)
   }
+}
+
+async function createIssues(pagesToCreateIssuesFrom) {
+
+  // tbd
 }
 
 //*========================================================================
