@@ -36,7 +36,7 @@ async function runIntegration() {
 async function synchronize(notionPages, githubIssues, githubIdToNotion) {
 
 	console.log(`synchronize()`)
-	
+
 	const pagesToCreate = []
 	const pagesToUpdate = []
 	const issuesToCreate = []
@@ -48,7 +48,7 @@ async function synchronize(notionPages, githubIssues, githubIdToNotion) {
 
 		if (page.issueNumber == -1) {
 			issuesToCreate.push(page)
-		} 
+		}
 	}
 
 	// Check Github issues
@@ -60,15 +60,15 @@ async function synchronize(notionPages, githubIssues, githubIdToNotion) {
 			pagesToCreate.push(issue)
 		} else {
 			pagesToUpdate.push({
-		        ...issue,
-		        pageId,
-		    })
+				...issue,
+				pageId,
+			})
 		}
 	}
 
 	await createNotionPages(pagesToCreate)
 	await updateNotionPages(pagesToUpdate, githubIssues)
-	await createGithubIssues(issuesToCreate)			 
+	await createGithubIssues(issuesToCreate)
 }
 
 
@@ -79,14 +79,14 @@ async function updateNotionPages(pages, allIssues) {
 	const pagesToUpdateChunks = _.chunk(pages, OPERATION_BATCH_SIZE)
 	for (const pagesToUpdateBatch of pagesToUpdateChunks) {
 		await Promise.all(
-		  pagesToUpdateBatch.map(({ pageId, ...issue }) =>
-		    notion.pages.update({
-		      page_id: pageId,
-		      properties: getPropertiesFromIssue(issue),
-		    })
-		  )
+			pagesToUpdateBatch.map(({ pageId, ...issue }) =>
+				notion.pages.update({
+					page_id: pageId,
+					properties: getPropertiesFromIssue(issue),
+				})
+			)
 		)
-	// console.log(`Completed batch size: ${pagesToUpdateBatch.length}`)
+		// console.log(`Completed batch size: ${pagesToUpdateBatch.length}`)
 	}
 
 }
@@ -101,14 +101,14 @@ async function createNotionPages(issues) {
 	const pagesToCreateChunks = _.chunk(issues, OPERATION_BATCH_SIZE)
 	for (const pagesToCreateBatch of pagesToCreateChunks) {
 		await Promise.all(
-		  pagesToCreateBatch.map(issue =>
-		    notion.pages.create({
-		      parent: { database_id: databaseId },
-		      properties: getPropertiesFromIssue(issue),
-		    })
-		  )
+			pagesToCreateBatch.map(issue =>
+				notion.pages.create({
+					parent: { database_id: databaseId },
+					properties: getPropertiesFromIssue(issue),
+				})
+			)
 		)
-	// console.log(`Completed batch size: ${pagesToCreateBatch.length}`)
+		// console.log(`Completed batch size: ${pagesToCreateBatch.length}`)
 	}
 }
 
@@ -117,9 +117,9 @@ async function createGithubIssues(pages) {
 
 	for (const page of pages) {
 		const newIssue = await octokit.request('POST /repos/{owner}/{repo}/issues', {
-		  owner: process.env.GITHUB_REPO_OWNER,
-		  repo: process.env.GITHUB_REPO_NAME,
-		  title: page.properties["Name"].title
+			owner: process.env.GITHUB_REPO_OWNER,
+			repo: process.env.GITHUB_REPO_NAME,
+			title: page.properties["Name"].title
 				.map(({ plain_text }) => plain_text)
 				.join("")
 		})
@@ -130,90 +130,93 @@ async function createGithubIssues(pages) {
 	}
 }
 
-async function setNewPageProperties(page, newIssue){
+async function setNewPageProperties(page, newIssue) {
 	console.log(`setNewPageProperties(), pageId=${page.id}, issue=${newIssue.data.state}`)
 
 	const response = await notion.pages.update({
-			page_id: page.id,
-			properties: {
-				'Issue Number': {
-					number: newIssue.data.number },
-				State: {
-					select: { name: newIssue.data.state } },
-				'Issue URL': {
-					url: newIssue.data.url},
-				'Number of Comments': {
-					number: newIssue.data.comments
-				}
+		page_id: page.id,
+		properties: {
+			'Issue Number': {
+				number: newIssue.data.number
+			},
+			State: {
+				select: { name: newIssue.data.state }
+			},
+			'Issue URL': {
+				url: newIssue.data.url
+			},
+			'Number of Comments': {
+				number: newIssue.data.comments
 			}
-		})
+		}
+	})
 }
 
 
 // ======== RETRIEVAL ======== 
 async function getNotionPages() {
-  const pages = []
-  let cursor = undefined
-  while (true) {
-    const { results, next_cursor } = await notion.databases.query({
-      database_id: databaseId,
-      start_cursor: cursor,
-    })
-    pages.push(...results) 
-    if (!next_cursor) {
-      break
-    }
-    cursor = next_cursor
-  }
+	const pages = []
+	let cursor = undefined
+	while (true) {
+		const { results, next_cursor } = await notion.databases.query({
+			database_id: databaseId,
+			start_cursor: cursor,
+		})
+		pages.push(...results)
+		if (!next_cursor) {
+			break
+		}
+		cursor = next_cursor
+	}
 
-  for (var i = 0; i < pages.length; i++) {
-    pages[i].pageId = pages[i].id
+	for (var i = 0; i < pages.length; i++) {
+		pages[i].pageId = pages[i].id
 
-    if (pages[i].properties["Issue Number"]) {
-      // console.log(`->entry already exists.`)
-      pages[i].issueNumber = pages[i].properties["Issue Number"].number
-    } else {
-      pages[i].issueNumber = -1
-      // console.log(`->entry doesn't yet exist. Setting to -1`)
-    } 
-  }
+		if (pages[i].properties["Issue Number"]) {
+			// console.log(`->entry already exists.`)
+			pages[i].issueNumber = pages[i].properties["Issue Number"].number
+		} else {
+			pages[i].issueNumber = -1
+			// console.log(`->entry doesn't yet exist. Setting to -1`)
+		}
+	}
 
-  console.log(`${pages.length} Notion pages retrieved.`)
-  return pages
+	console.log(`${pages.length} Notion pages retrieved.`)
+	return pages
 }
 
 // https://octokitnet.readthedocs.io/en/latest/issues/
 async function getGithubIssues() {
-  const issues = []
-  const iterator = octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
-    owner: process.env.GITHUB_REPO_OWNER,
-    repo: process.env.GITHUB_REPO_NAME,
-    state: "all",
-    per_page: 100,
-  })
-  for await (const { data } of iterator) {
-    for (const issue of data) {
-      if (!issue.pull_request) {
-        issues.push({
-          number: issue.number,
-          title: issue.title,
-          state: issue.state,
-          comment_count: issue.comments,
-          url: issue.html_url,
-        })
-      }
-    }
-  }
+	const issues = []
+	const iterator = octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
+		owner: process.env.GITHUB_REPO_OWNER,
+		repo: process.env.GITHUB_REPO_NAME,
+		state: "all",
+		per_page: 100,
+	})
+	for await (const { data } of iterator) {
+		for (const issue of data) {
+			if (!issue.pull_request) {
+				issues.push({
+					number: issue.number,
+					title: issue.title,
+					state: issue.state,
+					comment_count: issue.comments,
+					url: issue.html_url,
+				})
+			}
+		}
+	}
 
-  console.log(`${issues.length} Github issues retrieved.`)
-  return issues
+	console.log(`${issues.length} Github issues retrieved.`)
+	return issues
 }
 
 
 // ======== MAPPING ======== 
 async function mapPagesToIssues(notionPages) {
 	const pagesToIssues = {}
-	for (const {pageId, issueNumber} of notionPages) {
+	for (const { pageId, issueNumber } of notionPages) {
 		pagesToIssues[issueNumber] = pageId
 		console.log(`ghId=${issueNumber}, pageId=${pageId}`)
 	}
@@ -225,27 +228,35 @@ async function mapPagesToIssues(notionPages) {
 /**
  * Returns the GitHub issue to conform to this database's schema properties.
  *
- * @param {{ number: number, title: string, state: "open" | "closed", comment_count: number, url: string }} issue
+ * @param {{ number: number, title: string, state: "Backlog" | "Ready for QA", comment_count: number, url: string }} issue
  */
 function getPropertiesFromIssue(issue) {
-  const { title, number, state, comment_count, url } = issue
-  return {
-    Name: {
-      title: [{ type: "text", text: { content: title } }],
-    },
-    "Issue Number": {
-      number,
-    },
-    State: {
-      select: { name: state },
-    },
-    "Number of Comments": {
-      number: comment_count,
-    },
-    "Issue URL": {
-      url,
-    },
-  }
+
+	var stateName = ""
+
+	const { title, number, state, comment_count, url } = issue
+	if (state == "open") {
+		stateName = "Backlog"
+	} else {
+		stateName = "Ready for QA"
+	}
+	return {
+		Name: {
+			title: [{ type: "text", text: { content: title } }],
+		},
+		"Issue Number": {
+			number,
+		},
+		State: {
+			select: { name: stateName },
+		},
+		"Number of Comments": {
+			number: comment_count,
+		},
+		"Issue URL": {
+			url,
+		},
+	}
 }
 
 function getPropertiesFromPage(page) {
