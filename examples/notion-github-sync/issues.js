@@ -10,13 +10,6 @@ const notion = new Client({ auth: process.env.NOTION_KEY })
 const databaseId = process.env.NOTION_DATABASE_ID
 const OPERATION_BATCH_SIZE = 10
 
-
-
-
-// const notionIdToGithub = {}
-
-// map only after getNotionPages and getGithubIssues
-
 runIntegration()
 
 async function runIntegration() {
