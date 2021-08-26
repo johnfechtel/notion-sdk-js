@@ -41,7 +41,7 @@ async function synchronize(notionPages, githubIssues, githubIdToNotion) {
 	// 		if an existing, check Github issue for most uptodate
 	for (page of notionPages) {
 		// temporary for testing
-		issuesToUpdate.push(page)
+		// issuesToUpdate.push(page)
 
 		if (page.issueNumber == -1) {
 			issuesToCreate.push(page)
@@ -69,7 +69,7 @@ async function synchronize(notionPages, githubIssues, githubIdToNotion) {
 	await createNotionPages(pagesToCreate)
 	await updateNotionPages(pagesToUpdate, githubIssues)
 	await createGithubIssues(issuesToCreate)
-	await updateGithubIssues(issuesToUpdate, notionPages)
+	// await updateGithubIssues(issuesToUpdate, notionPages)
 }
 
 
@@ -92,35 +92,13 @@ async function updateNotionPages(pages, allIssues) {
 
 }
 
-async function updateGithubIssues(issues, allPages) {
+async function updateGithubIssues(pages, allPages) {
 	console.log(`updateGithubIssues()`)
 
 	const milestones = await octokit.request('GET /repos/{owner}/{repo}/milestones', {
 		owner: process.env.GITHUB_REPO_OWNER,
 		repo: process.env.GITHUB_REPO_NAME
 	})
-
-	// for each issue
-	//	if doesn't contain milestone
-	// 	go look up notion page, pull milestone
-	// 
-
-
-	for (const issue of issues){
-
-		writeToLog(issue, 'issue')
-		/*
-		if (!issue.data.milestone) {
-			console.log(`hullo`)
-		}*/
-		// go get the associated page
-		// const milestone = await returnMilestone(issue, milestones)
-
-		// const issueResponse = await octokit.request
-	}
-
-
-
 }
 
 async function createNotionPages(issues) {
@@ -151,6 +129,16 @@ async function createGithubIssues(pages) {
 
 	for (const page of pages) {
 		const milestone = await returnMilestone(page, milestones)
+		const labels = []
+		const features = await returnFeatures(page)
+		const entryType = await returnEntryType(page)
+		const priority = await returnPriority(page)
+		const points = await returnPoints(page)
+		
+		labels.push(...features)
+		labels.push(entryType)
+		labels.push(priority)
+		labels.push(points)
 
 		console.log(`-> milestone: ${milestone}`)
 		const newIssue = await octokit.request('POST /repos/{owner}/{repo}/issues', {
@@ -159,7 +147,7 @@ async function createGithubIssues(pages) {
 			title: page.properties["Name"].title
 				.map(({ plain_text }) => plain_text)
 				.join(""),
-			labels: ["label/one", "label/two"],
+			labels: labels,
 			milestone: milestone
 
 		})
@@ -240,6 +228,7 @@ async function getGithubIssues() {
 					number: issue.number,
 					title: issue.title,
 					state: issue.state,
+					labels: issue.labels
 				})
 			}
 		}
@@ -370,6 +359,130 @@ async function updateNotionMilestones(milestone, newGHID){
 	return response
 }
 
+// ======== FEATURES ========
+async function returnFeatures(page) {
+	// make map of existing features in github
+	// for each feature associated with notion page
+	// 	if it already exists, assign
+	//  else create new feature, assign
+
+	const features = []
+	const labels = await getGithubLabels()
+
+	const relatedFeatures = page.properties["Feature"]
+
+	if (relatedFeatures) {
+
+		for (const rel of relatedFeatures.relation) {
+			const relatedPage = await notion.pages.retrieve({
+				page_id: rel.id	
+			})
+			const name = relatedPage.properties["Name"].title[0].plain_text
+			const title = `Feature/${name}`
+
+			if (!labels[title]) {
+				await createNewGithubLabel(name, 'Feature')
+			}
+
+			features.push(title)
+		}
+	}
+
+	return features
+}
+
+// ======== ENTRY TYPE ========
+async function returnEntryType(page) {
+	const name = page.properties['Entry Type'].select.name
+	const title = `Entry Type/${name}`
+	await createNewGithubLabel(name, 'Entry Type')
+
+	return title
+}
+
+// ======== PRIORITY ========
+async function returnPriority(page) {
+	const name = page.properties['Priority'].select.name
+	const title = `Priority/${name}`
+	await createNewGithubLabel(name, 'Priority')
+
+	return title
+}
+
+// ======== POINTS ========
+async function returnPoints(page) {
+	const name = page.properties['Points'].select.name
+	const title = `Points/${name}`
+	await createNewGithubLabel(name, 'Points')
+
+	return title
+}
+
+
+// ======== LABELS ========
+async function getGithubLabels() {
+	// returns map of all github features
+	const githubLabels = {}
+
+	const result = await octokit.request('GET /repos/{owner}/{repo}/labels', {
+		owner: process.env.GITHUB_REPO_OWNER,
+		repo: process.env.GITHUB_REPO_NAME
+	})
+
+	for (label in result) {
+		githubLabels[label.name] = label.id
+	}
+
+	return githubLabels
+}
+
+async function createNewGithubLabel(name, type) {
+
+	// I don't think I need to do this, does Github create a new label automatically?
+	const title = `${type}/${name}`
+
+	var color = ''
+	var description = ''
+
+	switch (type) {
+		case 'Feature':
+			color = 'FFA500'
+			description = 'What software feature this issue relates to.'
+			break
+		case 'Entry Type':
+			color = '1dab1d' 
+			description = 'Whether this issue is a feature or a bug.'
+			break
+		case 'Priority':
+			color = '69d2db'
+			description = 'How important this issue is.'
+			break
+		case 'Points':
+			color = 'db69d0'
+			description = 'How long it is estimated this issue will take.'
+			break
+		default:
+			color = '808080'
+			description = 'Something went wrong.'
+	}
+
+	// this is lazy, but for some reason the github label map isn't working to catch pre-existing labels
+	try {
+		const result = await octokit.request('POST /repos/{owner}/{repo}/labels', {
+			owner: process.env.GITHUB_REPO_OWNER,
+			repo: process.env.GITHUB_REPO_NAME,
+			name: title,
+			color: color,
+			description: description
+		})
+	} catch (error) {
+		console.error(error)
+	}
+
+	// return result
+}
+
+// ======== HELP ======== 
 function writeToLog(data, prefix){
 
 	var jsonPage = JSON.stringify(data, null, 4)
